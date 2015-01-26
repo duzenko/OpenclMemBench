@@ -1,5 +1,5 @@
-__kernel void somekernel(__global int *dst)
+__kernel void somekernel(__global int4 *dst)
 {
-        int id = get_global_id(0);
-        dst[id] = 0;
+        int no = get_global_id(0);
+        dst[no] = (int4)123;
 }
