@@ -66,7 +66,7 @@ begin
   with Device do begin
     CommandQueue := CreateCommandQueue();
     for i := 0 to Device.GlobalMemSize div SIZE-1 do begin
-      Write(#13'Allocating chunk ', i);
+      Write(#13'Allocating chunk ', i+1);
       SetLength(Buffers, Length(Buffers)+1);
       Buffers[i] := CreateBuffer(SIZE, nil, []); //If dynamical array @Input[0]
       if Buffers[i].FMem = nil then begin
@@ -89,9 +89,9 @@ begin
       end;
       tick := tick / 10;
       CommandQueue.ReadBuffer(buffers[i], 4, @r);//If dynamical array @Output[0]
-      Writeln('Chunk ', i+1:2, ', ', i*128:4, ' MB: ',
-        tick:3:1, ' ms, ',
-        128/tick:2:1, ' GB/s', ' ', r=123);
+      Writeln('Chunk', i+1:7, i*128:7, ' MB',
+        tick:7:1, ' ms ',
+        128/tick:7:1, ' GB/s', (r=123):7);
     end;
 
     Kernel.Free();
