@@ -12,9 +12,8 @@ uses
   DelphiCL in 'Libs\OpenCL\DelphiCL.pas',
   SysUtils;
 
-const
-  SIZE = 128*1024*1024;
-  COUNT = SIZE div SizeOf(TCL_int4);
+var
+  SIZE, COUNT, REPEATS: Int64;
 
 type
   TTestDevice = class(TDCLDevice)
@@ -54,6 +53,7 @@ var
   ClSrc: PAnsiChar;
 begin
   CommandQueue := CreateCommandQueue();
+
   for i := 0 to GlobalMemSize div SIZE-1 do begin
     Write(#13'Allocating chunk ', i+1);
     SetLength(Buffers, Length(Buffers)+1);
@@ -65,24 +65,28 @@ begin
     end;
   end;
   WriteLn;
+  if ParamStr(5) = 'stop' then begin
+    Writeln('User stop after memory alloc. Press ENTER to continue...');
+    Readln;
+  end;
 
   ClSrc := ResourceInitialize('membench', 'CL');
   SimpleProgram := CreateProgram(@ClSrc);
-//  SimpleProgram := CreateProgram(ExtractFilePath(ParamStr(0))+'membench.cl');
   Kernel := SimpleProgram.CreateKernel('somekernel');
+
   for I := 0 to High(buffers) do begin
     Kernel.SetArg(0, Buffers[i]);
     tick := 0;
     CommandQueue.Execute(Kernel, COUNT);
-    for j := 1 to 10 do begin
+    for j := 1 to REPEATS do begin
       CommandQueue.Execute(Kernel, COUNT);
       tick := tick + CommandQueue.ExecuteTime/1000000.;
     end;
-    tick := tick / 10;
+    tick := tick / REPEATS;
     CommandQueue.ReadBuffer(buffers[i], 4, @r);//If dynamical array @Output[0]
-    Writeln('Chunk', i+1:7, i*128:7, ' MB',
+    Writeln('Chunk', i+1:7, i*SIZE div 1024 div 1024:7, ' MB',
       tick:7:1, ' ms ',
-      128/tick:7:1, ' GB/s', (r=123):7);
+      SIZE/tick/1024/1024:7:1, ' GB/s', (r=123):7);
   end;
 
   Kernel.Free();
@@ -99,6 +103,7 @@ var
   Device: TDCLDevice;
 
 begin
+  Writeln('OpenCL memory test. Build 15.01.28. https://github.com/duzenko/OpenclMemBench');
   Writeln('Init OpenCL...');
   InitOpenCL();
   Writeln('Create platforms...');
@@ -136,6 +141,10 @@ begin
     Device.MaxMemAllocSize div 1024 div 1024, ' MB of ', Device.GlobalMemSize div 1024 div 1024, 'MB');
 
   try
+    SIZE := StrToIntDef(ParamStr(3), 128) * 1024 * 1024;
+    REPEATS := StrToIntDef(ParamStr(4), 10);
+    COUNT := SIZE div SizeOf(TCL_int4);
+    Writeln('Chunk size: ', SIZE div 1024 div 1024, ' MB. Repeats: ', REPEATS, '.');
     TTestDevice(Device).Test;
     Writeln('All done. Press ENTER...');
     Readln;
