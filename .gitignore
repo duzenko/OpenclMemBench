@@ -6,3 +6,4 @@ dcu32/
 src/Libs/OpenCL/__history/
 *.identcache
 src/
+*.7z

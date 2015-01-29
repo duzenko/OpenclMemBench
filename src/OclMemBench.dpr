@@ -7,17 +7,20 @@ program OclMemBench;
 {$INCLUDE Libs\OpenCL\OpenCL.inc}
 
 uses
+  Windows, SysUtils,
   CL_platform in 'Libs\OpenCL\CL_platform.pas',
   CL in 'Libs\OpenCL\CL.pas',
   DelphiCL in 'Libs\OpenCL\DelphiCL.pas',
-  SysUtils;
-
-var
-  SIZE, COUNT, REPEATS: Int64;
+  TxtConfig in 'TxtConfig.pas';
 
 type
   TTestDevice = class(TDCLDevice)
-    procedure Test;
+    CommandQueue: TDCLCommandQueue;
+    Kernel : TDCLKernel;
+    Buffers: array of TDCLBuffer;
+    procedure Report(i, r: Integer; tick: Single);
+    procedure Test1(i, REPEATS: Integer);
+    procedure TestN;
   end;
 
 function ResourceInitialize(Name, ResType: PChar): PAnsiChar;
@@ -42,14 +45,43 @@ end;
 
 { TTestDevice }
 
-procedure TTestDevice.Test;
+procedure TTestDevice.Report;
+begin
+  Writeln('Chunk', i+1:7, i*SIZE div 1024 div 1024:7, ' MB',
+    tick:7:1, ' ms ',
+    SIZE/tick/1024/1024:7:1, ' GB/s', (r=123):7);
+end;
+
+procedure TTestDevice.Test1;
 var
-  i, j, r: Integer;
-  CommandQueue: TDCLCommandQueue;
-  SimpleProgram: TDCLProgram;
-  Kernel : TDCLKernel;
-  Buffers: array of TDCLBuffer;
+  j, r: Integer;
   tick: Single;
+  qpf, qpc1, qpc2: Int64;
+begin
+  QueryPerformanceFrequency(qpf);
+  tick := 0;
+  if AlternativeTimer then
+    QueryPerformanceCounter(qpc1);
+
+  for j := 1 to REPEATS do begin
+    CommandQueue.Execute(Kernel, COUNT);
+    tick := tick + CommandQueue.ExecuteTime/1000000.;
+  end;
+
+  if AlternativeTimer then begin
+    QueryPerformanceCounter(qpc2);
+    tick := 1000 * (qpc2 - qpc1) / qpf / REPEATS;
+  end else
+    tick := tick / REPEATS;
+
+  CommandQueue.ReadBuffer(buffers[i], 4, @r); // check if written successfully
+  Report(i, r, tick);
+end;
+
+procedure TTestDevice.TestN;
+var
+  i: Integer;
+  SimpleProgram: TDCLProgram;
   ClSrc: PAnsiChar;
 begin
   CommandQueue := CreateCommandQueue();
@@ -65,7 +97,7 @@ begin
     end;
   end;
   WriteLn;
-  if ParamStr(5) = 'stop' then begin
+  if StopAfterAllocate then begin
     Writeln('User stop after memory alloc. Press ENTER to continue...');
     Readln;
   end;
@@ -76,17 +108,13 @@ begin
 
   for I := 0 to High(buffers) do begin
     Kernel.SetArg(0, Buffers[i]);
-    tick := 0;
-    CommandQueue.Execute(Kernel, COUNT);
-    for j := 1 to REPEATS do begin
+    if DisplayFirstResult then
+      Test1(i, 1)
+    else
       CommandQueue.Execute(Kernel, COUNT);
-      tick := tick + CommandQueue.ExecuteTime/1000000.;
-    end;
-    tick := tick / REPEATS;
-    CommandQueue.ReadBuffer(buffers[i], 4, @r);//If dynamical array @Output[0]
-    Writeln('Chunk', i+1:7, i*SIZE div 1024 div 1024:7, ' MB',
-      tick:7:1, ' ms ',
-      SIZE/tick/1024/1024:7:1, ' GB/s', (r=123):7);
+    Test1(i, REPEATS);
+    if DisplayFirstResult then
+      WriteLn;
   end;
 
   Kernel.Free();
@@ -103,7 +131,7 @@ var
   Device: TDCLDevice;
 
 begin
-  Writeln('OpenCL memory test. Build 15.01.28. https://github.com/duzenko/OpenclMemBench');
+  Writeln('OpenCL memory test. Build 15.01.29. https://github.com/duzenko/OpenclMemBench');
   Writeln('Init OpenCL...');
   InitOpenCL();
   Writeln('Create platforms...');
@@ -114,8 +142,8 @@ begin
   if Platforms.PlatformCount = 1 then
     i := 1
   else
-    if ParamCount >= 1 then
-      i := StrToIntDef(ParamStr(1), 1)
+    if PlatformNo > 0 then
+      i := PlatformNo
     else begin
       Writeln('Select platform (enter number 1-', Platforms.PlatformCount, '):');
       ReadLn(i);
@@ -123,6 +151,7 @@ begin
   Platform := Platforms.Platforms[i-1];
   Writeln('Using platform ', Platform.Name);
 
+  Writeln('Enumerate devices...');
   for i := 0 to Platform.DeviceCount-1 do
     with Platform.Devices[i] do
       WriteLn('  [', i+1, '] ' , Trim(string(Name)), ' (',
@@ -130,22 +159,20 @@ begin
   if Platform.DeviceCount = 1 then
     i := 1
   else
-    if ParamCount >= 2 then
-      i := StrToIntDef(ParamStr(2), 0)
+    if DeviceNo > 0 then
+      i := DeviceNo
     else begin
       Writeln('Select device (enter number 1-', Platforms.PlatformCount, '):');
       ReadLn(i);
     end;
   Device := Platform.Devices[i-1];
-  Writeln('Using device ', Trim(Device.Name), '. Memory available ',
+  Writeln('Using device ', Trim(string(Device.Name)), '. Memory available ',
     Device.MaxMemAllocSize div 1024 div 1024, ' MB of ', Device.GlobalMemSize div 1024 div 1024, 'MB');
 
   try
-    SIZE := StrToIntDef(ParamStr(3), 128) * 1024 * 1024;
-    REPEATS := StrToIntDef(ParamStr(4), 10);
     COUNT := SIZE div SizeOf(TCL_int4);
     Writeln('Chunk size: ', SIZE div 1024 div 1024, ' MB. Repeats: ', REPEATS, '.');
-    TTestDevice(Device).Test;
+    TTestDevice(Device).TestN;
     Writeln('All done. Press ENTER...');
     Readln;
   except
