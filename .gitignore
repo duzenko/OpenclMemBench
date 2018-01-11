@@ -8,3 +8,4 @@ src/Libs/OpenCL/__history/
 *.7z
 *.local
 *.~dsk
+*.dcu
